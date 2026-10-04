@@ -1,0 +1,4 @@
+id,name,version,rule,description
+POL-01,Unusual payment amount,1.0,"Amount ≥ INR 200,000 AND amount ≥ 5 × account baseline.","Account baseline is a declared synthetic historical typical-payment amount. A match is a review signal, not proof of fraud."
+POL-02,Rapid transfer burst,1.0,At least 4 outgoing transfers in an inclusive trailing 15-minute window.,Evaluate per account in event-time order. Transactions participating in a qualifying window become evidence; overlapping windows are deduplicated.
+POL-03,New beneficiary exposure,1.0,"Beneficiary age ≤ 7 days AND payment amount ≥ INR 75,000.",Beneficiary age is measured at transaction time. A new beneficiary can be legitimate; reviewer judgement is required.

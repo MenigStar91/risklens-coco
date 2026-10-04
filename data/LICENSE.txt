@@ -1,0 +1,3 @@
+The synthetic records and internal demo-policy text in this directory and dist/data.js are dedicated to the public domain under CC0 1.0 Universal.
+https://creativecommons.org/publicdomain/zero/1.0/legalcode
+No real customer records or employer data are included.
