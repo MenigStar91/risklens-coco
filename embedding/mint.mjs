@@ -32,9 +32,11 @@ export async function mintEmbedUrl(env, fetchImpl = fetch) {
     headers:{'Content-Type':'application/json','Authorization':`Bearer ${jwt}`,
       'X-Snowflake-Authorization-Token-Type':'KEYPAIR_JWT','X-Snowflake-Role':env.SNOWFLAKE_ROLE},
     body:JSON.stringify({parent_origin:env.PARENT_ORIGIN}),
-    signal:AbortSignal.timeout(30000),redirect:'error',cache:'no-store'
+    signal:AbortSignal.timeout(30000),redirect:'manual',cache:'no-store'
   }); } catch { throw new Error('SNOWFLAKE_NETWORK_ERROR'); }
   // Do not log Snowflake bodies or single-use URLs.
+  if (response.status >= 300 && response.status < 400)
+    throw new Error('SNOWFLAKE_REDIRECT_REJECTED');
   if (!response.ok) throw new Error(`SNOWFLAKE_HTTP_${response.status}`);
   const result = await response.json();
   if (typeof result.embed_url !== 'string' || !result.embed_url.startsWith('https://'))
@@ -51,7 +53,7 @@ export async function handleEmbedRequest(request, env, authenticatedUser) {
   try {
     return new Response(JSON.stringify({embedUrl:await mintEmbedUrl(env)}),{headers});
   } catch (exc) {
-    const allowed = /^(HOST_CONFIG_MISSING|HOST_KEY_SIGNING_FAILED|SNOWFLAKE_NETWORK_ERROR|SNOWFLAKE_HTTP_\d{3})$/;
+    const allowed = /^(HOST_CONFIG_MISSING|HOST_KEY_SIGNING_FAILED|SNOWFLAKE_NETWORK_ERROR|SNOWFLAKE_REDIRECT_REJECTED|SNOWFLAKE_HTTP_\d{3})$/;
     const code = allowed.test(exc?.message) ? exc.message : 'EMBED_RESPONSE_INVALID';
     // Log only a classified code, never a credential, upstream body or embed URL.
     console.error('RiskLens embed failure', {code});
