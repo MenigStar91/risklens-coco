@@ -15,21 +15,27 @@ export function keypairJwt(env, now = Math.floor(Date.now() / 1000)) {
 }
 
 export async function mintEmbedUrl(env, fetchImpl = fetch) {
+  const required = ['STREAMLIT_APP','SNOWFLAKE_ACCOUNT_URL','SNOWFLAKE_ACCOUNT','SNOWFLAKE_USER','SNOWFLAKE_ROLE','SNOWFLAKE_PRIVATE_KEY','PARENT_ORIGIN'];
+  if (required.some(key => typeof env[key] !== 'string' || !env[key]))
+    throw new Error('HOST_CONFIG_MISSING');
   const [db,schema,app,...extra] = env.STREAMLIT_APP.split('.');
   if (!db || !schema || !app || extra.length) throw new Error('Invalid app configuration');
   const url = new URL(env.SNOWFLAKE_ACCOUNT_URL);
   if (url.protocol !== 'https:' || !url.hostname.endsWith('.snowflakecomputing.com'))
     throw new Error('Invalid account configuration');
   url.pathname = `/api/v2/databases/${encodeURIComponent(db)}/schemas/${encodeURIComponent(schema)}/streamlits/${encodeURIComponent(app)}:generate-embed-url`;
-  const response = await fetchImpl(url, {
+  let jwt;
+  try { jwt = keypairJwt(env); } catch { throw new Error('HOST_KEY_SIGNING_FAILED'); }
+  let response;
+  try { response = await fetchImpl(url, {
     method:'POST',
-    headers:{'Content-Type':'application/json','Authorization':`Bearer ${keypairJwt(env)}`,
+    headers:{'Content-Type':'application/json','Authorization':`Bearer ${jwt}`,
       'X-Snowflake-Authorization-Token-Type':'KEYPAIR_JWT','X-Snowflake-Role':env.SNOWFLAKE_ROLE},
     body:JSON.stringify({parent_origin:env.PARENT_ORIGIN}),
     signal:AbortSignal.timeout(30000),redirect:'error',cache:'no-store'
-  });
+  }); } catch { throw new Error('SNOWFLAKE_NETWORK_ERROR'); }
   // Do not log Snowflake bodies or single-use URLs.
-  if (!response.ok) throw new Error(`Snowflake embed request failed (${response.status})`);
+  if (!response.ok) throw new Error(`SNOWFLAKE_HTTP_${response.status}`);
   const result = await response.json();
   if (typeof result.embed_url !== 'string' || !result.embed_url.startsWith('https://'))
     throw new Error('Invalid embed response');
@@ -44,7 +50,11 @@ export async function handleEmbedRequest(request, env, authenticatedUser) {
     return new Response(null,{status:403,headers});
   try {
     return new Response(JSON.stringify({embedUrl:await mintEmbedUrl(env)}),{headers});
-  } catch {
-    return new Response(JSON.stringify({error:'The live demo could not start. Please try again.'}),{status:502,headers});
+  } catch (exc) {
+    const allowed = /^(HOST_CONFIG_MISSING|HOST_KEY_SIGNING_FAILED|SNOWFLAKE_NETWORK_ERROR|SNOWFLAKE_HTTP_\d{3})$/;
+    const code = allowed.test(exc?.message) ? exc.message : 'EMBED_RESPONSE_INVALID';
+    // Log only a classified code, never a credential, upstream body or embed URL.
+    console.error('RiskLens embed failure', {code});
+    return new Response(JSON.stringify({error:`The live demo could not start (${code}). Please share this code.`}),{status:502,headers});
   }
 }
